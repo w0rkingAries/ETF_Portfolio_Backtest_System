@@ -1,0 +1,225 @@
+from __future__ import annotations
+
+import pandas as pd
+import numpy as np
+
+from src.risk import(
+    compute_turnover,
+    transaction_cost,
+    asset_stop_loss,
+)
+from src.metric import rolling_volatility
+
+
+# 平均分配權重給所有 ETF
+def equal_weight_vector(columns: list[str]) -> pd.Series:
+    n = len(columns)
+    if n == 0:
+        raise ValueError("資產數量不能為 0。")
+
+    weight = 1.0 / n
+    return pd.Series(weight, index=columns, name="weight")
+
+
+# 根據平均分配的權重計算報酬率
+def equal_weight_portfolio_returns(asset_returns: pd.DataFrame) -> pd.Series:
+    weights = equal_weight_vector(asset_returns.columns.tolist())
+    portfolio_returns = asset_returns.dot(weights)
+    portfolio_returns.name = "equal_weight_portfolio_return"
+    return portfolio_returns
+
+
+# 取得每個月最一個交易日的價格
+def get_month_end_rebalance_dates(prices: pd.DataFrame) -> pd.DatetimeIndex:
+    if prices.empty:
+        raise ValueError("空的價格表")
+    rebalance_dates = prices.groupby(prices.index.to_period("M")).apply(lambda x: x.index[-1])
+    return pd.DatetimeIndex(rebalance_dates.values)
+
+
+# 跟據momentum score 選擇最高的 n 個 ETF
+def select_top_n_assets(score_row: pd.Series, top_n: int = 3) -> list[str]:
+    valid_scores = score_row.dropna()
+    if valid_scores.empty:
+        return []
+
+    selected = valid_scores.sort_values(ascending=False).head(top_n).index.tolist()
+    return selected
+
+
+# 在每月最後一個交易日, 跟據momentum score 選擇最高的 n 個 ETF
+# 每個月選擇最高的 n 個 ETF, 並平均分配權重
+def build_cs_mom_weights(
+    prices: pd.DataFrame,
+    mom_factor: pd.DataFrame,
+    top_n: int = 3,
+) -> pd.DataFrame:
+    if prices.empty:
+        raise ValueError("空的價格表")
+    if top_n <= 0:
+        raise ValueError("ETF 選擇數量必須大於0")
+    
+    momentum = mom_factor
+    rebalance_dates = get_month_end_rebalance_dates(prices)
+
+    weights = pd.DataFrame(0.0, index = prices.index, columns = prices.columns, dtype = float)
+    rebalance_dates = [d for d in rebalance_dates if d in prices.index]
+
+    for i, rebalance_date in enumerate(rebalance_dates):
+        row_mom = momentum.loc[rebalance_date]
+        score = row_mom.copy()
+        # 避免初期指標 NaN 時出錯
+        score = score.dropna()
+
+        selected_assets = score.nlargest(top_n).index
+        if selected_assets.empty:
+            continue
+
+        current_weights = pd.Series(0.0, index=prices.columns, dtype=float)
+        current_weights.loc[selected_assets] = 1.0 / len(selected_assets)
+
+        # 生效區間：下一個交易日 到 下一次 rebalance date 當日
+        # t 日策略, t+1 日生效, 避免 look-ahead bias
+        rebalance_loc = prices.index.get_loc(rebalance_date)
+        start_loc = rebalance_loc + 1 
+
+        if start_loc >= len(prices.index):
+            continue
+
+        if i < len(rebalance_dates) - 1:
+            next_rebalance_date = rebalance_dates[i + 1]
+            end_loc = prices.index.get_loc(next_rebalance_date)
+        else:
+            end_loc = len(prices.index)
+
+        weights.iloc[start_loc:end_loc, :] = current_weights.values
+
+    return weights
+
+
+# long only
+def build_ts_mom_weights(
+    prices: pd.DataFrame,
+    mom_factor: pd.DataFrame,
+) -> pd.DataFrame:
+    if prices.empty:
+        raise ValueError("空的價格表")
+
+    momentum = mom_factor
+    rebalance_dates = get_month_end_rebalance_dates(prices)
+
+    weights = pd.DataFrame(
+        0.0, index=prices.index, columns=prices.columns, dtype=float
+    )
+    rebalance_dates = [d for d in rebalance_dates if d in prices.index]
+
+    for i, rebalance_date in enumerate(rebalance_dates):
+        row_mom = momentum.loc[rebalance_date]
+        score = row_mom.copy()
+
+        # 避免初期指標 NaN 時出錯
+        final_score = score.dropna()
+
+        # Time-series momentum:
+        # 每個 asset 獨立判斷，signal > 0 就持有
+        selected_assets = final_score[final_score > 0].index
+
+        if len(selected_assets) == 0:
+            continue
+
+        current_weights = pd.Series(0.0, index=prices.columns, dtype=float)
+        current_weights.loc[selected_assets] = 1.0 / len(selected_assets)
+
+        # 生效區間：下一個交易日 到 下一次 rebalance date 當日
+        # t 日策略, t+1 日生效, 避免 look-ahead bias
+        rebalance_loc = prices.index.get_loc(rebalance_date)
+        start_loc = rebalance_loc + 1
+
+        if start_loc >= len(prices.index):
+            continue
+
+        if i < len(rebalance_dates) - 1:
+            next_rebalance_date = rebalance_dates[i + 1]
+            end_loc = prices.index.get_loc(next_rebalance_date)
+        else:
+            end_loc = len(prices.index)
+
+        weights.iloc[start_loc:end_loc, :] = current_weights.values
+
+    return weights
+
+
+# 根據每個月 ETF 的權重計算對應的報酬率
+def compute_portfolio_returns_from_weights(
+    returns: pd.DataFrame,
+    weights: pd.DataFrame,
+    fee_rate: float = 0.001,
+    tax_rate: float = 0.0,
+    slippage_rate: float = 0.0005,
+) -> pd.Series:
+    if returns.empty:
+        raise ValueError("空的報酬表")
+    if weights.empty:
+        raise ValueError("空的權重表")
+    # len(weight) 會比 len(return) 少一天, 所以要對齊
+    weights = weights.loc[returns.index] 
+    if not returns.index.equals(weights.index):
+        raise ValueError("returns.index 和 weights.index 必須一致")
+    if list(returns.columns) != list(weights.columns):
+        raise ValueError("returns.columns 和 weights.columns 必須一致")
+    
+    # 沒有設定止損
+    raw_portfolio_returns = (returns * weights).sum(axis=1)
+
+    turnover = compute_turnover(weights)
+    net_portfolio_returns = transaction_cost(
+        portfolio_returns = raw_portfolio_returns,
+        turnover = turnover,
+        fee_rate = fee_rate,
+        tax_rate = tax_rate,
+        slippage_rate=slippage_rate,
+    )
+    net_portfolio_returns.name = "net_portfolio_returns"
+
+    return net_portfolio_returns 
+
+
+# 策略經過 asset_stop 調整後, 計算報酬率
+def compute_portfolio_returns_with_stop(
+    returns: pd.DataFrame,
+    weights: pd.DataFrame,
+    asset_stop_pct: float | None = -0.12,
+    fee_rate: float = 0.001,
+    tax_rate: float = 0.0,
+    slippage_rate: float = 0.0005,
+) -> list[pd.Series]:
+    if returns.empty:
+        raise ValueError("空的報酬表")
+    if weights.empty:
+        raise ValueError("空的權重表")
+    # len(weight) 會比 len(return) 少一天, 所以要對齊
+    weights = weights.loc[returns.index] 
+    if not returns.index.equals(weights.index):
+        raise ValueError("returns.index 和 weights.index 必須一致")
+    if list(returns.columns) != list(weights.columns):
+        raise ValueError("returns.columns 和 weights.columns 必須一致")
+
+    # Asset level 止損
+    asset_stop_weights = asset_stop_loss(
+        portfolio_returns = returns,
+        weights = weights,
+        stop_loss_pct = asset_stop_pct,
+    )
+    asset_stop_adjust = (returns * asset_stop_weights).sum(axis=1)
+
+    asset_turnover = compute_turnover(asset_stop_weights)
+    asset_stop_returns = transaction_cost(
+        portfolio_returns = asset_stop_adjust,
+        turnover = asset_turnover,
+        fee_rate = fee_rate,
+        tax_rate = tax_rate,
+        slippage_rate = slippage_rate,
+    )
+    asset_stop_returns.name = "asset_stop_returns"
+    
+    return  asset_stop_returns, asset_stop_weights
