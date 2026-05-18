@@ -5,9 +5,6 @@ import numpy as np
 import scipy.stats as st
 
 
-from src.indicators import cross_sectional_momentum, time_series_momentum
-
-
 def compute_forward_return(
     prices: pd.DataFrame,
     horizon: int,
@@ -61,6 +58,8 @@ def compute_ic(
     for key, group in panel.groupby(group_key):
         group = group.dropna(subset=["factor", "future_return"])
         n_obs = len(group)
+        if mode == "cross_sectional":
+            group = group.sort_values("factor",ascending=False).head(min_obs)
 
         if n_obs < min_obs:
             continue
@@ -261,20 +260,19 @@ def run_lookback_robustness(
     prices: pd.DataFrame,
     lookbacks: list[int],
     regime_series: pd.Series,
+    factor_func,
     horizon: int = 21,
     mode: str = "cross_sectional",
     method: str = "spearman",
     min_obs: int = 5,
 ) -> dict:
+    
     fwd_ret = compute_forward_return(prices, horizon)
     all_results = {}
     summary_rows = []
 
     for lb in lookbacks:
-        if mode == "cross_sectional":
-            factor = cross_sectional_momentum(prices, lb)
-        elif mode == "time_series":
-            factor = time_series_momentum(prices, cum_months = lb)
+        factor = factor_func(prices, lb)
         factor = factor.loc[fwd_ret.index]
 
         result = run_factor_validation(
@@ -297,4 +295,45 @@ def run_lookback_robustness(
     return {
         "lookback_summary": robustness_summary,
         "lookback_results": all_results,
+    }
+
+def run_top_n_robustness(
+    prices: pd.DataFrame,
+    lookbacks: int,
+    regime_series: pd.Series,
+    factor_func,
+    min_obs: list[int],
+    horizon: int = 21,
+    mode: str = "cross_sectional",
+    method: str = "spearman",
+) -> dict:
+    
+    fwd_ret = compute_forward_return(prices, horizon)
+    all_results = {}
+    summary_rows = []
+
+    for obs in min_obs:
+        factor = factor_func(prices, lookbacks)
+        factor = factor.loc[fwd_ret.index]
+
+        result = run_factor_validation(
+            factor=factor,
+            prices=prices,
+            regime_series=regime_series,
+            mode=mode,
+            method=method,
+            min_obs=obs,
+            horizon=horizon,
+        )
+
+        all_results[obs] = result
+        row = result["ic_summary"].to_dict()
+        row["top_n"] = obs
+        summary_rows.append(row)
+
+    robustness_summary = pd.DataFrame(summary_rows).sort_values("top_n").reset_index(drop=True)
+
+    return {
+        "top_n_summary": robustness_summary,
+        "top_n_results": all_results,
     }

@@ -2,7 +2,6 @@
 
 1. Introduction:
 本專案實作了一套系統性的 ETF 配置策略量化研究流程, 驗證動量指標在不同市場條件下的有效性.
-This project implements a systematic quantitative research pipeline for ETF allocation strategies, focusing on evaluating the effectiveness of momentum-based factors under different market conditions.
 
 核心框架:
     市場條件(Regime) → 因子驗證(Factor Validation) → 策略(Strategy) → 效能評估(Evaluation)
