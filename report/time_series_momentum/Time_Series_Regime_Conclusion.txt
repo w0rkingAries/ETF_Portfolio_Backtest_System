@@ -1,1 +1,1 @@
-TS-MOM behaves better than CS-MOM in Bear Low Vol conditions, but it still struggles in Bear High Vol conditions. Positive trend filtering alone is not enough to eliminate sharp regime-transition risk.
+Time-series momentum behaves better than cross-sectional momentum in Bear Low Vol conditions, but it still struggles in Bear High Vol conditions. Positive trend filtering alone is not enough to eliminate sharp regime-transition risk.

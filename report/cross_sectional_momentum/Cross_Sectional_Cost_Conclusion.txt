@@ -1,1 +1,1 @@
-Asset-level stop-loss variants are not supported by the current results. Across the nine CS-MOM configurations, the stop-loss version reduces Sharpe in every case. On average, it lowers annual return by 3.10 percentage points and lowers Sharpe by 0.17.
+Asset-level stop-loss variants are not supported by the current results. Across the nine cross-sectional momentum configurations, the stop-loss version reduces Sharpe in every case. On average, it lowers annual return by 3.10 percentage points and lowers Sharpe by 0.17.
