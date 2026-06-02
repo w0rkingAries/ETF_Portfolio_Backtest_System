@@ -11,6 +11,18 @@ The current version focuses on two momentum families:
 
 The system is designed for research iteration rather than one-click production trading. Most outputs are saved as CSV/TXT reports, and `web_visualize.py` converts the latest outputs into a local HTML dashboard.
 
+### Run the Workflow
+
+From the project root, run both strategy pipelines before generating the dashboard:
+
+```bash
+python cs_mom.py
+python ts_mom.py
+python web_visualize.py
+```
+
+The first two commands download the required data, run the CS-MOM and TS-MOM backtests, and refresh the CSV/TXT reports. The final command reads the latest report artifacts and rebuilds `report/dashboard.html`.
+
 ---
 
 ## 2. Research Flow
