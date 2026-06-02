@@ -67,7 +67,7 @@ def _build_weights(
     weight: str,
     top_n: int | None = None,
     max_weights: float | None = None,
-    renormalize: bool = True,
+    renormalize: bool = False,
 ) -> pd.DataFrame:
     params = signature(portfolio_builder).parameters
     kwargs = {
@@ -85,7 +85,7 @@ def _build_weights(
     return portfolio_builder(**kwargs)
 
 
-def make_walk_forward_folds(
+def make_oos_folds(
     dates: pd.DatetimeIndex,
     start: str,
     end: str,
@@ -245,7 +245,7 @@ def _build_strategy_returns(
     configs: list,
     weight: str = "equal",
     max_weights: float | None = None,
-    renormalize: bool = True,
+    renormalize: bool = False,
     portfolio_builder: Callable[..., pd.DataFrame] = build_cs_mom_weights,
 ) -> tuple[
     dict[str, pd.Series],
@@ -292,9 +292,10 @@ def _build_strategy_returns(
     return strategy_returns, strategy_trade, strategy_weights, strategy_cost_detail
 
 
-def run_walk_forward_validation(
+def run_rolling_oos_validation(
     adj_prices: pd.DataFrame,
     returns: pd.DataFrame,
+    benchmark_returns: pd.Series,
     regime_series: pd.Series,
     factor_func: Callable[..., pd.DataFrame],
     lookback: int,
@@ -328,7 +329,7 @@ def run_walk_forward_validation(
     common_dates = adj_prices.index.intersection(returns.index).intersection(regime_series.index)
     common_dates = pd.DatetimeIndex(common_dates).sort_values()
 
-    folds = make_walk_forward_folds(
+    folds = make_oos_folds(
         dates=common_dates,
         start=start,
         end=end,
@@ -391,6 +392,7 @@ def run_walk_forward_validation(
 
         main_strategy = primary_strategy_name or configs[0][0]
         main_ret = test_strategy_returns[main_strategy].dropna()
+        benchmark_test_ret = _slice_by_date(benchmark_returns, fold.test_start, fold.test_end).dropna()
 
         fold_rows.append(
             {
@@ -413,11 +415,12 @@ def run_walk_forward_validation(
                 # "test_avg_daily_return": main_ret.mean() if not main_ret.empty else pd.NA,
                 # "test_daily_vol": main_ret.std() if not main_ret.empty else pd.NA,
                 "test_sharpe": sharpe_ratio(main_ret),
+                "benchmark_sharpe": sharpe_ratio(benchmark_test_ret),
                 # "test_num_days": int(main_ret.shape[0]),
             }
         )
 
     return {
-        "walk_forward_summary": pd.DataFrame(fold_rows),
-        "walk_forward_returns": pd.DataFrame(fold_returns),
+        "Rolling_OOS_summary": pd.DataFrame(fold_rows),
+        "Rolling_OOS_returns": pd.DataFrame(fold_returns),
     }

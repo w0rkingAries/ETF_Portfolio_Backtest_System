@@ -38,7 +38,7 @@ from src.wrapper import (
     _run_factor_validation_pack,
     _slice_by_date,
     _validate_dates,
-    run_walk_forward_validation,
+    run_rolling_oos_validation,
 )
 
 # ================================================================================
@@ -58,7 +58,7 @@ def main(
     top_n: int = 13,
     lookback_buffer_years: int = 1,
     run_factor: bool = True,
-    run_walk_forward: bool = True,
+    run_rolling_oos: bool = True,
     wf_train_months: int = 18,
     wf_test_months: int = 6,
     wf_step_months: int = 6,
@@ -221,15 +221,16 @@ def main(
     wf_report = None
     wf_result = {}
 
-    if run_walk_forward:
+    if run_rolling_oos:
         wf_summary_parts: list[pd.DataFrame] = []
         wf_return_parts: list[pd.DataFrame] = []
 
         raw_configs = [("Cross_sectional_momentum_1M", "M"),]
         #for wf_mode in wf_modes:
-        mode_result = run_walk_forward_validation(
+        mode_result = run_rolling_oos_validation(
                 adj_prices=adj_prices_ext,
                 returns=returns_ext,
+                benchmark_returns=benchmark_returns,
                 regime_series=regime_ETF_ext["regime"],
                 factor_func=raw_cs_momentum,
                 lookback=lookback,
@@ -244,24 +245,24 @@ def main(
                 horizon=21,
                 min_obs=13,
         )
-        wf_summary_parts.append(mode_result["walk_forward_summary"])
+        wf_summary_parts.append(mode_result["Rolling_OOS_summary"])
 
-        mode_returns = mode_result["walk_forward_returns"].copy()
+        mode_returns = mode_result["Rolling_OOS_returns"].copy()
         mode_returns.columns = [f"{wf_modes}_{col}" for col in mode_returns.columns]
         wf_return_parts.append(mode_returns)
         #
 
         wf_result = {
-            "walk_forward_summary": pd.concat(wf_summary_parts, axis=0, ignore_index=True)
+            "Rolling_OOS_summary": pd.concat(wf_summary_parts, axis=0, ignore_index=True)
             if wf_summary_parts else pd.DataFrame(),
-            "walk_forward_returns": pd.concat(wf_return_parts, axis=1)
+            "Rolling_OOS_returns": pd.concat(wf_return_parts, axis=1)
             if wf_return_parts else pd.DataFrame(),
         }
-        wf_result["walk_forward_summary"].pop("fold_id")
+        wf_result["Rolling_OOS_summary"].pop("fold_id")
 
         wf_report = build_report_block(
-            object={"Walk_forward_summary": wf_result["walk_forward_summary"]},
-            title=f"Walk Forward Validation, train/test/step: {wf_train_months}/{wf_test_months}/{wf_step_months} months",
+            object={"Rolling_OOS_summary": wf_result["Rolling_OOS_summary"]},
+            title=f"Rolling OOS Validation, train/test/step: {wf_train_months}/{wf_test_months}/{wf_step_months} months",
             mode=mode,
         )
 
@@ -334,16 +335,16 @@ def main(
         df_strategy_ret = pd.concat(strategy_returns, axis=1)
         save_dataframe(df_strategy_ret, output_path=STRATEGY_DATA_PATH, filename=f"{etf}/strategy_returns.csv")
 
-        if run_walk_forward and wf_result:
+        if run_rolling_oos and wf_result:
             save_dataframe(
-                wf_result["walk_forward_summary"],
+                wf_result["Rolling_OOS_summary"],
                 output_path=REPORT_OUTPUT_PATH,
-                filename=f"{etf}_walk_forward_summary.csv",
+                filename=f"{etf}_Rolling_OOS_summary.csv",
             )
             save_dataframe(
-                wf_result["walk_forward_returns"],
+                wf_result["Rolling_OOS_returns"],
                 output_path=STRATEGY_DATA_PATH,
-                filename=f"{etf}/walk_forward_returns.csv",
+                filename=f"{etf}/Rolling_OOS_returns.csv",
             )
 
         save_dataframe(metirc_by_regime, output_path=REPORT_OUTPUT_PATH, filename=f"{etf}_metrics_by_regime.csv")
@@ -371,16 +372,16 @@ def main(
         for names, values in outputs.items():
             export_report(
                 blocks=values,
-                title=f"Time_Series_{names}_Summary.txt",
+                title=f"Cross_Sectional_{names}_Summary.txt",
                 mode=mode,
                 save_path=REPORT_OUTPUT_PATH,
-                filename=f"Time_Series_{names}_Summary.txt",
+                filename=f"Cross_Sectional_{names}_Summary.txt",
             )
 
     # return {
     #     "regime": regime_ETF,
     #     "factor_validation": cs_ic_summary,
-    #     "walk_forward": wf_result,
+    #     "Rolling_OOS": wf_result,
     #     "strategy_returns": strategy_returns,
     #     "trade_stats_by_regime": trade_stats_by_regime,
     #     "metrics_by_regime": metirc_by_regime,

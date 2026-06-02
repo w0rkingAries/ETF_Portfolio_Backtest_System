@@ -1,0 +1,1 @@
+The strategy performs well when trends are supported by a bull regime, but it does not provide reliable downside protection in bear regimes. This is a useful finding: cross-sectional selection can improve portfolio construction, but it is not a substitute for an explicit risk-off overlay.

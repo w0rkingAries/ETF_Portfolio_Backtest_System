@@ -1,0 +1,1 @@
+Cross-sectional momentum is the stronger strategy family in this project. The volatility-adjusted 2M configuration is the most defensible showcase variant: it combines a net Sharpe above 1.0 with lower volatility and drawdown than the raw portfolio. The main limitation is weak bear-regime behavior.

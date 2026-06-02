@@ -41,7 +41,7 @@ from src.wrapper import (
     _run_factor_validation_pack,
     _slice_by_date,
     _validate_dates,
-    run_walk_forward_validation,
+    run_rolling_oos_validation,
 )
 
 
@@ -58,7 +58,7 @@ def main(
     lookback: int = 7,
     lookback_buffer_years: int = 1,
     run_factor: bool = True,
-    run_walk_forward: bool = True,
+    run_rolling_oos: bool = True,
     wf_train_months: int = 18,
     wf_test_months: int = 6,
     wf_step_months: int = 6,
@@ -191,7 +191,6 @@ def main(
         max_weights=0.2,
         configs=wei_adj_configs,
         portfolio_builder=build_ts_mom_weights,
-        renormalize = False,
     )
 
     strategy_returns = raw_returns | vol_adj_returns | wei_adj_returns
@@ -207,14 +206,15 @@ def main(
     wf_report = None
     wf_result = {}
 
-    if run_walk_forward:
+    if run_rolling_oos:
         wf_summary_parts: list[pd.DataFrame] = []
         wf_return_parts: list[pd.DataFrame] = []
 
         wf_configs = [("Time_series_momentum_1M", "M")]
-        mode_result = run_walk_forward_validation(
+        mode_result = run_rolling_oos_validation(
             adj_prices=adj_prices_ext,
             returns=returns_ext,
+            benchmark_returns=benchmark_returns,
             regime_series=regime_ETF_ext["regime"],
             factor_func=raw_ts_momentum,
             lookback=lookback,
@@ -233,23 +233,23 @@ def main(
             portfolio_builder=build_ts_mom_weights,
             primary_strategy_name="Time_series_momentum_1M",
         )
-        wf_summary_parts.append(mode_result["walk_forward_summary"])
+        wf_summary_parts.append(mode_result["Rolling_OOS_summary"])
 
-        mode_returns = mode_result["walk_forward_returns"].copy()
+        mode_returns = mode_result["Rolling_OOS_returns"].copy()
         mode_returns.columns = [f"{wf_modes}_{col}" for col in mode_returns.columns]
         wf_return_parts.append(mode_returns)
 
         wf_result = {
-            "walk_forward_summary": pd.concat(wf_summary_parts, axis=0, ignore_index=True)
+            "Rolling_OOS_summary": pd.concat(wf_summary_parts, axis=0, ignore_index=True)
             if wf_summary_parts else pd.DataFrame(),
-            "walk_forward_returns": pd.concat(wf_return_parts, axis=1)
+            "Rolling_OOS_returns": pd.concat(wf_return_parts, axis=1)
             if wf_return_parts else pd.DataFrame(),
         }
-        wf_result["walk_forward_summary"].pop("fold_id")
+        wf_result["Rolling_OOS_summary"].pop("fold_id")
 
         wf_report = build_report_block(
-            object={"Walk_forward_summary": wf_result["walk_forward_summary"]},
-            title=f"Walk Forward Validation, train/test/step: {wf_train_months}/{wf_test_months}/{wf_step_months} months",
+            object={"Rolling_oos_summary": wf_result["Rolling_OOS_summary"]},
+            title=f"Rolling OOS Validation, train/test/step: {wf_train_months}/{wf_test_months}/{wf_step_months} months",
             mode=mode,
         )
 
@@ -316,16 +316,16 @@ def main(
         df_strategy_ret = pd.concat(strategy_returns, axis=1)
         save_dataframe(df_strategy_ret, output_path=STRATEGY_DATA_PATH, filename=f"{etf}/ts_strategy_returns.csv")
 
-        if run_walk_forward and wf_result:
+        if run_rolling_oos and wf_result:
             save_dataframe(
-                wf_result["walk_forward_summary"],
+                wf_result["Rolling_OOS_summary"],
                 output_path=REPORT_OUTPUT_PATH,
-                filename=f"{etf}_ts_walk_forward_summary.csv",
+                filename=f"{etf}_ts_Rolling_OOS_summary.csv",
             )
             save_dataframe(
-                wf_result["walk_forward_returns"],
+                wf_result["Rolling_OOS_returns"],
                 output_path=STRATEGY_DATA_PATH,
-                filename=f"{etf}/ts_walk_forward_returns.csv",
+                filename=f"{etf}/ts_Rolling_OOS_returns.csv",
             )
 
         save_dataframe(metric_by_regime, output_path=REPORT_OUTPUT_PATH, filename=f"{etf}_ts_metrics_by_regime.csv")

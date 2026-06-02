@@ -18,24 +18,12 @@ def compute_turnover(weights: pd.DataFrame) -> pd.Series:
         raise ValueError("空的權重表")
     
     turnover = weights.diff().abs().sum(axis=1).fillna(0.0)
-    turnover.iloc[0] = 0.0
+    turnover.iloc[0] = weights.iloc[0].abs().sum()
     turnover.name = "Turnover"
     return turnover
 
 
 # 每次買賣所需的交易成本
-def transaction_cost(
-    portfolio_returns: pd.Series,
-    turnover: pd.Series,
-    fee_rate: float = 0.001,
-    tax_rate: float = 0.0,
-    slippage_rate: float = 0.0005
-) -> pd.Series:
-    
-    cost = turnover * (fee_rate + tax_rate + slippage_rate)
-    return portfolio_returns - cost
-
-
 def apply_transaction_cost_model(
     gross_returns: pd.Series,
     weights: pd.DataFrame,
@@ -65,7 +53,7 @@ def apply_transaction_cost_model(
 def compute_risk_cost_summary(
     cost_detail: pd.DataFrame,
     risk_free_rate: float = 0.0,
-) -> pd.Series:
+) -> pd.DataFrame:
     """
     整合策略的報酬、風險、成本與執行風險。
     """
@@ -75,6 +63,17 @@ def compute_risk_cost_summary(
     transaction_cost = cost_detail["transaction_cost"]
     gross_returns = cost_detail["gross_return"]
     net_returns = cost_detail["net_return"]
+    observed_months = len(
+        pd.period_range(
+            start=turnover.index.min(),
+            end=turnover.index.max(),
+            freq="M",
+        )
+    )
+    if observed_months == 0:
+        raise ValueError("cost_detail must cover at least one month")
+
+    annualized_turnover = turnover.sum() * 12.0 / observed_months
 
     summary.append({
         # gross performance
@@ -93,7 +92,7 @@ def compute_risk_cost_summary(
 
         # cost / execution
         "avg_daily_turnover": turnover.mean(),
-        "annualized_turnover": turnover.mean() * TRADING_DAYS,
+        "annualized_turnover": annualized_turnover,
         "total_transaction_cost": transaction_cost.sum(),
         "avg_daily_cost": transaction_cost.mean(),
 
@@ -106,7 +105,7 @@ def compute_risk_cost_summary(
 
 
 def compute_multiple_risk_cost_summary(
-    strategies: dict[str, dict],
+    strategies: dict[str, pd.DataFrame],
     risk_free_rate: float = 0.0,
 ) -> pd.DataFrame:
 
@@ -161,6 +160,7 @@ def asset_stop_loss(
                 continue
 
             if ticker in stopped_assets:
+                adjusted.loc[dt, ticker] = 0.0
                 continue
 
             r = portfolio_returns.loc[dt, ticker]
@@ -169,8 +169,8 @@ def asset_stop_loss(
             if cum_asset_returns[ticker] <= stop_loss_pct:
                 stopped_assets.add(ticker)
 
-                if i + 1 < len(adjusted.index):
-                    next_dt = adjusted.index[i + 1]
-                    adjusted.loc[next_dt:, ticker] = 0.0
+                # if i + 1 < len(adjusted.index):
+                #     next_dt = adjusted.index[i + 1]
+                #     adjusted.loc[next_dt:, ticker] = 0.0
 
     return adjusted

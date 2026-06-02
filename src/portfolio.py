@@ -4,13 +4,12 @@ import pandas as pd
 import numpy as np
 
 from src.risk import(
-    compute_turnover,
-    transaction_cost,
     asset_stop_loss,
     apply_transaction_cost_model,
 )
 from src.metric import rolling_volatility
 
+TRADING_DAYS_M = 21
 
 # 平均分配權重給所有 ETF
 def equal_weight_vector(columns: list[str]) -> pd.Series:
@@ -112,7 +111,7 @@ def build_cs_mom_weights(
             current_weights.loc[selected_assets] = 1.0 / len(selected_assets)
         elif weighting == "vol_adj":
             ret = prices.pct_change()
-            vol = rolling_volatility(ret, lb)
+            vol = rolling_volatility(ret, lb * TRADING_DAYS_M)
             row_vol = vol.loc[rebalance_date, selected_assets].replace(0, pd.NA).dropna().astype(float)
             inv_vol = 1.0 / row_vol
             vol_adj_weights = (inv_vol / inv_vol.sum()).astype(float)
@@ -185,7 +184,7 @@ def build_ts_mom_weights(
             current_weights.loc[selected_assets] = 1.0 / len(selected_assets)
         elif weighting == "vol_adj":
             ret = prices.pct_change()
-            vol = rolling_volatility(ret, lb)
+            vol = rolling_volatility(ret, lb * TRADING_DAYS_M)
             row_vol = vol.loc[rebalance_date, selected_assets].replace(0, pd.NA).dropna().astype(float)
             inv_vol = 1.0 / row_vol
             vol_adj_weights = (inv_vol / inv_vol.sum()).astype(float)

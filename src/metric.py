@@ -93,7 +93,7 @@ def historical_var(returns: pd.Series, confidence_level: float = 0.95) -> float:
 # 計算滾動波動率
 def rolling_volatility(
     returns: pd.Series,
-    window: int = 63,
+    window: int = 3,
     periods_per_year: int = TRADING_DAYS
 ) -> pd.Series:
     vol = returns.rolling(window).std(ddof=1) * np.sqrt(periods_per_year)
@@ -101,29 +101,65 @@ def rolling_volatility(
     return vol
 
 
-# 根據 rebalance_flag 統計交易的日期和盈虧
+# 根據完整時間線上的權重變化切分交易區間
+def extract_trades(
+    returns: pd.Series,
+    weights: pd.DataFrame,
+) -> pd.DataFrame:
+    columns = ["entry_date", "exit_date", "trade_return"]
+
+    if returns.empty or weights.empty:
+        return pd.DataFrame(columns=columns)
+
+    returns = returns.reindex(weights.index)
+    if returns.isna().any():
+        raise ValueError("returns and weights must have the same index")
+
+    trades = []
+    entry_date = None
+    exit_date = None
+    cum_return = 0.0
+
+    rebalance_flag = weights.diff().abs().sum(axis=1) > 1e-8
+    active_flag = weights.abs().sum(axis=1) > 1e-8
+
+    for t in returns.index:
+        if rebalance_flag.loc[t] and entry_date is not None:
+            trades.append({
+                "entry_date": entry_date,
+                "exit_date": exit_date,
+                "trade_return": cum_return,
+            })
+            entry_date = None
+            exit_date = None
+            cum_return = 0.0
+
+        if not active_flag.loc[t]:
+            continue
+
+        if entry_date is None:
+            entry_date = t
+        r = returns.loc[t]
+        cum_return = (1 + cum_return) * (1 + r) - 1
+        exit_date = t
+
+    if entry_date is not None:
+        trades.append({
+            "entry_date": entry_date,
+            "exit_date": exit_date,
+            "trade_return": cum_return,
+        })
+
+    return pd.DataFrame(trades, columns=columns)
+
+
+# 保留只回傳盈虧的介面，供整體交易統計使用
 def extract_trade_returns(
     returns: pd.Series,
     weights: pd.DataFrame
 ) -> list[float]:
-    trades = []
-    cum_return = 0.0
-
-    rebalance_flag = weights.diff().abs().sum(axis=1) > 1e-8
-
-    for t in returns.index:
-
-        if rebalance_flag.loc[t] and cum_return != 0:
-            trades.append(cum_return)
-            cum_return = 0.0
-
-        r = returns.loc[t]
-        cum_return = (1 + cum_return) * (1 + r) - 1
-
-    if cum_return != 0:
-        trades.append(cum_return)
-
-    return trades
+    trades = extract_trades(returns=returns, weights=weights)
+    return trades["trade_return"].tolist()
 
 
 # 計算各項交易統計數據
@@ -151,3 +187,5 @@ def compute_trade_stats(
             "payoff_ratio": payoff_ratio,
             "profit_factor": profit_factor,
         })
+
+    return pd.DataFrame(rows).T

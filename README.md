@@ -1,51 +1,162 @@
-# 量化 ETF 動量研究
+# ETF Portfolio Backtest System
 
 ## 1. Introduction
 
-本專案實作了一套系統性的 ETF 配置策略量化研究流程, 驗證動量指標在不同市場條件下的有效性.  
+This project is a research-oriented ETF momentum backtest system. It builds a full workflow from ETF data preparation, market regime classification, factor validation, strategy construction, trading analysis, and cost-aware performance evaluation.
 
-### 核心框架
+The current version focuses on two momentum families:
 
-市場條件(Regime) → 因子驗證(Factor Validation) → 策略(Strategy) → 效能評估(Evaluation)
+- **Cross-sectional momentum (CS-MOM)**: ranks ETFs against each other and rotates into the strongest names.
+- **Time-series momentum (TS-MOM)**: evaluates each ETF against its own trend signal and allocates when momentum is positive.
 
-### 重要組成部分
-
-- 資料樣本: 20檔不同種類的台灣 ETF + 5檔美國債券 ETF(由於台灣債券 ETF 數據有限所以以美國債券作為替代)
-- 市場條件: 趨勢 × 波動率 (4 regimes)
-- 因子: 橫截面(Cross-sectional) & 時間序列(Time-series) 動量.
-- 因子驗證: IC (Information Coefficient) by regime + IC robustness.
-- 策略: 每月調整權重, 選擇表現最好的前 N 檔(CS-MOM), 只做多.
-- 風險: 手續費, 換手率, 資產級止損.
-- 效能評估: 夏普值, 最大回撤, 風險價值, 交易統計.
+The system is designed for research iteration rather than one-click production trading. Most outputs are saved as CSV/TXT reports, and `web_visualize.py` converts the latest outputs into a local HTML dashboard.
 
 ---
 
-## 2. Conclusion
+## 2. Research Flow
 
-- 動量指標只有弱與不穩定的預測能力.
-- 效益對特定市場條件高度依賴.
-- 回溯期大小的選擇對結果表現的影響顯著.
-- 交易成本與止損對結果產生重大影響.
-- 弱因子在通過調整策略後仍然可以產生可接受的結果.
+### I. Data
+
+- ETF universe: default ETF list from `src/data_preprocessing.py`
+- Benchmark examples: `0050.TW` and `SPY`
+- Price handling:
+  - download ETF data
+  - clean missing rows
+  - forward-fill missing values
+  - compute daily returns and growth index
+
+### II. Regime
+
+Market regime is used as the main lens for understanding when momentum works or fails.
+
+Current regime dimensions include:
+
+- Bull / Bear
+- High Vol / Low Vol
+- Breadth overlay
+- Correlation overlay
+
+### III. Factor Validation
+
+Momentum factors are validated before strategy results are interpreted.
+
+The validation pack includes:
+
+- IC summary
+- IC by regime
+- lookback robustness
+- minimum-observation robustness
+- rolling out-of-sample validation
+
+### IV. Strategy
+
+The system tests several strategy variants:
+
+- raw equal-weight momentum
+- volatility-adjusted momentum
+- capped volatility-adjusted momentum
+- optional asset-stop variants
+- monthly, 2-month, and 3-month rebalance frequencies
+
+### V. Evaluation
+
+Strategy performance is evaluated across:
+
+- annual return
+- volatility
+- Sharpe ratio
+- maximum drawdown
+- VaR
+- trade statistics
+- turnover
+- transaction cost
+- net-vs-gross return drag
 
 ---
 
-## 3. Insight
+## 3. Dashboard
 
-### I. 因子驗證 > 策略
+The dashboard presents the full research view through three sections:
 
-- 直接設計啟發式策略做效能評估無法解釋策略的優劣勢.
-- 通過因子驗證降低過度擬合和假 alpha 的發生.
+- **Overview**: net performance highlights, equity curves, strategy ranking, and rolling out-of-sample results
+- **Regime**: regime distribution, performance metrics, and trade statistics by entry regime
+- **Cost**: turnover, transaction cost, return drag, and Sharpe drag
 
-### II. Alpha 一般都是條件性
-
-- 缺少市場條件的建立與後續分析, 就只看到不穩定的結果, 而看不到策略為什麼優勢/失效.
-- 動量策略的有效性取決於市場條件, 所以並不是具有普遍性的 alpha 來源.
-
-### III. 風險管理
-
-- 止損重塑了策略的報酬分佈, 在降低波動率的同時也壓縮了報酬率.
-- 止損同時也有機會讓最大回撤惡化, 因為限縮了回彈的潛在機會.
-- 高換手率會放大交易成本，讓原本僅有微弱 alpha 的策略在扣除成本後迅速失去獲利能力.
+The top-level tabs switch between CS-MOM and TS-MOM. Inside each strategy family, the toggle bar switches between `Overview`, `Regime`, and `Cost`. Each section places its matching `*_*_Conclusion.txt` research note directly below the section heading.
 
 ---
+
+## 4. Project Structure
+
+```text
+ETF_Portfolio_Backtest_System/
+├── cs_mom.py                         # Cross-sectional momentum runner
+├── ts_mom.py                         # Time-series momentum runner
+├── web_visualize.py                  # Local HTML dashboard generator
+├── requirement.txt                   # Python dependencies
+├── data/
+│   ├── ETF/                          # Cleaned ETF and benchmark data
+│   └── strategy/                     # Strategy returns and weights
+├── report/
+│   ├── cross_sectional_momentum/     # CS-MOM CSV/TXT reports
+│   ├── time_series_momentum/         # TS-MOM CSV/TXT reports
+│   └── dashboard.html                # Generated dashboard
+└── src/
+    ├── data_preprocessing.py
+    ├── indicators.py
+    ├── market_regime.py
+    ├── metric.py
+    ├── portfolio.py
+    ├── reporting.py
+    ├── risk.py
+    └── wrapper.py
+```
+
+---
+
+## 5. Key Outputs
+
+### Cross-Sectional Momentum
+
+```text
+report/cross_sectional_momentum/
+data/strategy/cross_sectional_momentum/
+```
+
+Important files:
+
+- `0050.TW_metrics_by_regime.csv`
+- `0050.TW_metrics_by_multi_regime.csv`
+- `0050.TW_trade_stats_by_regime.csv`
+- `0050.TW_trade_stats_by_multi_regime.csv`
+- `0050.TW_risk_cost_summary.csv`
+- `0050.TW_Rolling_OOS_summary.csv`
+- `strategy_returns.csv`
+
+### Time-Series Momentum
+
+```text
+report/time_series_momentum/
+data/strategy/time_series_momentum/
+```
+
+Important files:
+
+- `0050.TW_ts_metrics_by_regime.csv`
+- `0050.TW_ts_metrics_by_multi_regime.csv`
+- `0050.TW_ts_trade_stats_by_regime.csv`
+- `0050.TW_ts_trade_stats_by_multi_regime.csv`
+- `0050.TW_ts_risk_cost_summary.csv`
+- `0050.TW_ts_Rolling_OOS_summary.csv`
+- `ts_strategy_returns.csv`
+
+---
+
+## 6. Conclusion
+
+- Momentum should be judged by regime, not only by full-period performance.
+- Gross performance can look attractive before turnover and transaction cost are included.
+- Rolling out-of-sample validation helps separate robust parameter choices from overfit settings.
+- Volatility adjustment improves the CS-MOM risk-return balance.
+- Asset-level stop-loss overlays are not consistently beneficial.
+- Transaction costs reduce returns but do not reverse the main ranking.

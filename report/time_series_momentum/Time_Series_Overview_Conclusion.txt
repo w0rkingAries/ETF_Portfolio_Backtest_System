@@ -1,0 +1,1 @@
+Time-series momentum adds a useful second research lens, especially for examining trend filtering and portfolio risk controls. Its best variant is lower risk than the raw implementation, but the family is weaker than CS-MOM on risk-adjusted return in the current sample.
